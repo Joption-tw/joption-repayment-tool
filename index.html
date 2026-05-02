@@ -67,6 +67,8 @@
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [showConfirmModal, setShowConfirmModal] = useState(false);
             const [showDeleteRowModal, setShowDeleteRowModal] = useState(false);
+            const [showEditDebtModal, setShowEditDebtModal] = useState(false);
+            const [editDebtInput, setEditDebtInput] = useState('');
             const [rowToDelete, setRowToDelete] = useState(null);
             const [pinInput, setPinInput] = useState('');
             const [authError, setAuthError] = useState(false);
@@ -181,6 +183,20 @@
                 }
             };
 
+            const handleEditDebtRequest = () => {
+                setEditDebtInput(settings.initialDebt.toString());
+                requireAdmin(() => { setShowEditDebtModal(true); });
+            };
+
+            const executeEditDebt = () => {
+                const newDebt = parseInt(editDebtInput);
+                if (!isNaN(newDebt) && newDebt > 0) {
+                    updateSettings({...settings, initialDebt: newDebt});
+                    setShowEditDebtModal(false);
+                    setEditDebtInput('');
+                }
+            };
+
             // 操作方法
             const handleCellChange = (index, field, value) => {
                 if (rows[index].isReconciled) return;
@@ -254,7 +270,7 @@
                                 <span className={`text-[10px] px-1.5 rounded ${syncStatus==='online'?'bg-emerald-100 text-emerald-600':'bg-slate-100'}`}>{syncStatus==='online'?'● 同步中':'中斷'}</span>
                             </div>
                             <div className="absolute right-1 flex gap-1.5 text-[9px] overflow-x-auto scrollbar-hide">
-                                <div onClick={() => requireAdmin()} className="flex items-center gap-0.5 cursor-pointer shrink-0 border-r pr-1 border-slate-100">
+                                <div onClick={() => handleEditDebtRequest()} className="flex items-center gap-0.5 cursor-pointer shrink-0 border-r pr-1 border-slate-100">
                                     <span className="text-slate-400">欠款{!isAdmin && '🔒'}:</span>
                                     <span className={`font-bold ${isAdmin?'text-blue-600':'text-slate-800'}`}>{settings.initialDebt.toLocaleString()}</span>
                                 </div>
@@ -376,6 +392,19 @@
                                 <div className="flex gap-2">
                                     <button onClick={()=>{setShowAuthModal(false);setPinInput('');setAuthError(false);}} className="flex-1 py-1.5 bg-slate-100 rounded text-xs">取消</button>
                                     <button onClick={handleAuthSubmit} className="flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-bold">解鎖</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showEditDebtModal && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
+                            <div className="bg-white rounded-xl p-6 w-[280px] text-center shadow-2xl border border-slate-200">
+                                <h3 className="font-bold mb-4 text-sm text-slate-800">編輯欠款金額</h3>
+                                <input type="number" value={editDebtInput} onChange={(e)=>setEditDebtInput(e.target.value)} onKeyDown={(e)=>e.key==='Enter'&&executeEditDebt()} className="w-full border-2 border-blue-500 rounded p-2 text-center text-lg outline-none mb-4" autoFocus />
+                                <div className="flex gap-2">
+                                    <button onClick={()=>{setShowEditDebtModal(false);setEditDebtInput('');}} className="flex-1 py-1.5 bg-slate-100 rounded text-xs">取消</button>
+                                    <button onClick={executeEditDebt} className="flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-bold">確定</button>
                                 </div>
                             </div>
                         </div>
