@@ -3,37 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>代付對帳系統 (極簡縮排版)</title>
+    <title>代付對帳系統 (極致縮排版)</title>
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 React 與 ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
-    <!-- 引入 Babel 供瀏覽器即時編譯 JSX -->
+    <!-- 引入 Babel -->
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <!-- 引入 Recharts 圖表庫 -->
+    <!-- 引入 Recharts -->
     <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
     <script src="https://unpkg.com/recharts@2.12.0/umd/Recharts.js"></script>
     <style>
-        /* 自訂捲軸外觀 */
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        /* 自訂捲軸 */
+        ::-webkit-scrollbar { width: 3px; height: 3px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
         
-        /* 隱藏數字輸入框的上下箭頭，並修正手機端字體防止自動放大 */
+        /* 輸入框優化 */
         input[type=number]::-webkit-inner-spin-button, 
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-        input[type=number], input[type=text] { -moz-appearance: textfield; font-size: 14px !important; }
+        input[type=number], input[type=text] { 
+            -moz-appearance: textfield; 
+            font-size: 13px !important; 
+            padding: 0 2px !important;
+        }
 
-        /* 對帳勾選框大小 */
-        .reconcile-checkbox { width: 1.2rem; height: 1.2rem; cursor: pointer; accent-color: #4F81BD; }
+        .reconcile-checkbox { width: 1.1rem; height: 1.1rem; cursor: pointer; accent-color: #4F81BD; }
         
-        /* 壓縮表格間距，增加可見行數 */
-        td, th { padding: 4px 2px !important; height: 36px !important; }
-        input { height: 30px !important; }
+        /* 表格極度緊湊 */
+        td, th { padding: 4px 1px !important; height: 34px !important; }
+        input { height: 28px !important; }
         
-        /* 隱藏設定列的滾動條 */
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -46,11 +48,8 @@
         const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
 
         function App() {
-            // 雲端連線狀態
             const [dbRef, setDbRef] = useState(null);
             const [syncStatus, setSyncStatus] = useState(typeof __firebase_config === 'undefined' ? 'local' : 'offline');
-            
-            // 管理員與彈窗狀態
             const [isAdmin, setIsAdmin] = useState(false);
             const [showAuthModal, setShowAuthModal] = useState(false);
             const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -60,20 +59,17 @@
             const [authError, setAuthError] = useState(false);
             const [pendingAction, setPendingAction] = useState(null);
 
-            // 基礎設定資料
             const [settings, setSettings] = useState(() => {
                 const saved = localStorage.getItem('joption_excel_settings');
                 return saved ? JSON.parse(saved) : { initialDebt: 400000, rateOrig: 4.7, ratePay: 5.0, adminPin: '8888' };
             });
 
-            // 表格行資料
             const [rows, setRows] = useState(() => {
                 const saved = localStorage.getItem('joption_excel_rows');
                 if (saved) return JSON.parse(saved);
                 return Array.from({ length: 15 }, (_, i) => ({ id: Date.now() + i, dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false }));
             });
 
-            // Firebase 初始化 (使用 new Function 繞過編譯器限制)
             useEffect(() => {
                 if (typeof __firebase_config === 'undefined') return;
                 const initFirebase = async () => {
@@ -82,56 +78,41 @@
                         const { initializeApp } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
                         const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
                         const { getFirestore, doc, setDoc, onSnapshot } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
-                        
                         const firebaseConfig = JSON.parse(__firebase_config);
                         const app = initializeApp(firebaseConfig);
                         const auth = getAuth(app);
                         const db = getFirestore(app);
                         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                        
-                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                        
-                        onAuthStateChanged(auth, (user) => {
-                            if (user) setDbRef({ db, doc, setDoc, onSnapshot, appId });
-                        });
-                    } catch (err) { console.error("Firebase Init Error:", err); }
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) { await signInWithCustomToken(auth, __initial_auth_token); } 
+                        else { await signInAnonymously(auth); }
+                        onAuthStateChanged(auth, (user) => { if (user) setDbRef({ db, doc, setDoc, onSnapshot, appId }); });
+                    } catch (err) { console.error(err); }
                 };
                 initFirebase();
             }, []);
 
-            // 資料同步監聽
             useEffect(() => {
                 if (!dbRef) return;
                 setSyncStatus('connecting');
                 const { db, doc, onSnapshot, appId } = dbRef;
                 const roomDoc = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', 'shared_ledger');
-                
                 const unsubscribe = onSnapshot(roomDoc, (snapshot) => {
                     if (snapshot.exists()) {
                         const data = snapshot.data();
                         if (data.settings) setSettings(data.settings);
                         if (data.rows) setRows(data.rows);
-                    } else {
-                        saveToCloudRef.current(settings, rows);
-                    }
+                    } else { saveToCloudRef.current(settings, rows); }
                     setSyncStatus('online');
                 }, (error) => { setSyncStatus('offline'); });
                 return () => unsubscribe();
             }, [dbRef]);
 
-            // 雲端儲存
             const saveToCloudRef = useRef(null);
             saveToCloudRef.current = async (newSettings, newRows) => {
                 if (!dbRef) return;
                 const { db, doc, setDoc, appId } = dbRef;
                 const roomDoc = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', 'shared_ledger');
-                try {
-                    await setDoc(roomDoc, { settings: newSettings, rows: newRows, updatedAt: Date.now() });
-                } catch (e) { console.error("Cloud Save Error:", e); }
+                try { await setDoc(roomDoc, { settings: newSettings, rows: newRows, updatedAt: Date.now() }); } catch (e) { }
             };
 
             const updateRows = (newRows) => {
@@ -146,33 +127,16 @@
                 if (syncStatus === 'online') saveToCloudRef.current(newSettings, rows);
             };
 
-            // 管理員驗證包裝
             const requireAdmin = (action) => {
-                if (isAdmin) {
-                    if (action) action();
-                } else {
-                    setPendingAction(() => action);
-                    setShowAuthModal(true);
-                }
+                if (isAdmin) { if (action) action(); } 
+                else { setPendingAction(() => action); setShowAuthModal(true); }
             };
 
             const handleAuthSubmit = () => {
-                if (pinInput === settings.adminPin) {
-                    setIsAdmin(true);
-                    setShowAuthModal(false);
-                    setPinInput('');
-                    setAuthError(false);
-                    if (pendingAction) {
-                        pendingAction();
-                        setPendingAction(null);
-                    }
-                } else {
-                    setAuthError(true);
-                    setTimeout(() => setAuthError(false), 2000);
-                }
+                if (pinInput === settings.adminPin) { setIsAdmin(true); setShowAuthModal(false); setPinInput(''); setAuthError(false); if (pendingAction) { pendingAction(); setPendingAction(null); } } 
+                else { setAuthError(true); setTimeout(() => setAuthError(false), 2000); }
             };
 
-            // 操作方法
             const handleCellChange = (index, field, value) => {
                 const newRows = [...rows];
                 newRows[index][field] = value;
@@ -188,9 +152,7 @@
             };
 
             const handleClearAllRequest = () => {
-                requireAdmin(() => {
-                    setShowConfirmModal(true);
-                });
+                requireAdmin(() => { setShowConfirmModal(true); });
             };
 
             const executeClearAll = () => {
@@ -199,19 +161,14 @@
             };
 
             const handleDeleteRowRequest = (index) => {
-                requireAdmin(() => {
-                    setRowToDelete(index);
-                    setShowDeleteRowModal(true);
-                });
+                requireAdmin(() => { setRowToDelete(index); setShowDeleteRowModal(true); });
             };
 
             const executeDeleteRow = () => {
                 if (rowToDelete !== null) {
                     const newRows = [...rows];
                     newRows.splice(rowToDelete, 1);
-                    if (newRows.length === 0) {
-                        newRows.push({ id: Date.now(), dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false });
-                    }
+                    if (newRows.length === 0) newRows.push({ id: Date.now(), dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false });
                     updateRows(newRows);
                     setShowDeleteRowModal(false);
                     setRowToDelete(null);
@@ -223,7 +180,6 @@
                 updateRows([...rows, ...newRows]);
             };
 
-            // 計算邏輯
             const margin = (settings.ratePay - settings.rateOrig).toFixed(2);
             let currentDebt = settings.initialDebt;
             let totalRMB = 0, totalTWD = 0, totalRepaid = 0;
@@ -243,96 +199,91 @@
             return (
                 <div className="flex flex-col h-full p-1 max-w-[1400px] w-full mx-auto font-sans relative">
                     
-                    {/* 上方設定與數據區塊 (約佔 1/5) */}
-                    <div className="flex-none h-[20vh] min-h-[135px] flex flex-col justify-between mb-1">
-                        {/* 標題與設定列 */}
+                    {/* 上方設定與數據區塊 - 移除冗餘空間 */}
+                    <div className="flex-none flex flex-col gap-1 mb-1">
                         <div className="bg-white p-1 rounded border flex justify-between items-center shadow-sm">
-                            <div className="flex items-center gap-2 pl-1 shrink-0">
-                                <span className="text-xs font-bold">對帳系統</span>
-                                <span className={`text-[9px] px-1 rounded flex items-center gap-1 ${syncStatus==='online'?'bg-emerald-100 text-emerald-600':'bg-slate-100'}`}>
-                                    {syncStatus==='online' && <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse"></div>}
-                                    {syncStatus==='online'?'即時':'連線中'}
-                                </span>
+                            <div className="flex items-center gap-1 pl-1 shrink-0">
+                                <span className="text-xs font-black text-blue-900">對帳表</span>
+                                <span className={`text-[8px] px-1 rounded ${syncStatus==='online'?'bg-emerald-100 text-emerald-600':'bg-slate-100'}`}>{syncStatus==='online'?'● 連線':'中斷'}</span>
                             </div>
-                            <div className="flex gap-2 text-[10px] overflow-x-auto scrollbar-hide">
-                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-1 cursor-pointer shrink-0 border-r pr-2 border-slate-100">
-                                    <span className="text-slate-500">欠款{!isAdmin && '🔒'}:</span>
-                                    <span className={`font-bold px-1 rounded ${isAdmin?'bg-yellow-50 text-blue-700':'text-slate-800'}`}>{settings.initialDebt.toLocaleString()}</span>
+                            <div className="flex gap-1.5 text-[9px] overflow-x-auto scrollbar-hide">
+                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-0.5 cursor-pointer shrink-0 border-r pr-1 border-slate-100">
+                                    <span className="text-slate-400">欠款{!isAdmin && '🔒'}:</span>
+                                    <span className="font-bold text-slate-800">{settings.initialDebt.toLocaleString()}</span>
                                 </div>
-                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-1 cursor-pointer shrink-0 border-r pr-2 border-slate-100">
-                                    <span className="text-slate-500">原匯{!isAdmin && '🔒'}:</span>
-                                    <span className={`font-bold px-1 rounded ${isAdmin?'bg-blue-50 text-blue-700':'text-slate-800'}`}>{settings.rateOrig}</span>
+                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-0.5 cursor-pointer shrink-0 border-r pr-1 border-slate-100">
+                                    <span className="text-slate-400">原匯{!isAdmin && '🔒'}:</span>
+                                    <span className="font-bold text-slate-800">{settings.rateOrig}</span>
                                 </div>
-                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-1 cursor-pointer shrink-0">
-                                    <span className="text-slate-500">結算{!isAdmin && '🔒'}:</span>
-                                    <span className={`font-bold px-1 rounded ${isAdmin?'bg-blue-50 text-blue-700':'text-blue-800'}`}>{settings.ratePay}</span>
+                                <div onClick={() => !isAdmin && requireAdmin()} className="flex items-center gap-0.5 cursor-pointer shrink-0">
+                                    <span className="text-slate-400">結算:</span>
+                                    <span className="font-bold text-blue-700">{settings.ratePay}</span>
                                 </div>
                             </div>
                         </div>
 
-                        {/* 四格數據方塊 */}
                         <div className="grid grid-cols-4 gap-1">
-                            <div className="bg-slate-800 p-1 rounded text-white text-center flex flex-col justify-center shadow-sm">
-                                <p className="text-[9px] opacity-70">餘額</p>
-                                <p className="text-xs font-bold leading-tight">{Math.round(currentDebt).toLocaleString()}</p>
+                            <div className="bg-slate-800 p-1 rounded text-white text-center flex flex-col justify-center">
+                                <p className="text-[8px] opacity-60">餘額</p>
+                                <p className="text-[11px] font-bold">{Math.round(currentDebt).toLocaleString()}</p>
                             </div>
-                            <div className="bg-emerald-600 p-1 rounded text-white text-center flex flex-col justify-center shadow-sm">
-                                <p className="text-[9px] opacity-70">抵扣</p>
-                                <p className="text-xs font-bold leading-tight">{Math.round(totalRepaid).toLocaleString()}</p>
+                            <div className="bg-emerald-600 p-1 rounded text-white text-center flex flex-col justify-center">
+                                <p className="text-[8px] opacity-60">抵扣</p>
+                                <p className="text-[11px] font-bold">{Math.round(totalRepaid).toLocaleString()}</p>
                             </div>
-                            <div className="bg-blue-600 p-1 rounded text-white text-center flex flex-col justify-center shadow-sm">
-                                <p className="text-[9px] opacity-70">採購(RMB)</p>
-                                <p className="text-xs font-bold leading-tight">{Math.round(totalRMB).toLocaleString()}</p>
+                            <div className="bg-blue-600 p-1 rounded text-white text-center flex flex-col justify-center">
+                                <p className="text-[8px] opacity-60">累計RMB</p>
+                                <p className="text-[11px] font-bold">{Math.round(totalRMB).toLocaleString()}</p>
                             </div>
-                            <div className="bg-purple-600 p-1 rounded text-white text-center flex flex-col justify-center shadow-sm">
-                                <p className="text-[9px] opacity-70">應收(TWD)</p>
-                                <p className="text-xs font-bold leading-tight">{Math.round(totalTWD).toLocaleString()}</p>
+                            <div className="bg-purple-600 p-1 rounded text-white text-center flex flex-col justify-center">
+                                <p className="text-[8px] opacity-60">應收TWD</p>
+                                <p className="text-[11px] font-bold">{Math.round(totalTWD).toLocaleString()}</p>
                             </div>
                         </div>
                     </div>
 
-                    {/* 表格主體區塊 (佔 4/5 空間) */}
-                    <div className="flex-1 min-h-0 bg-white rounded border border-slate-300 flex flex-col overflow-hidden">
+                    {/* 表格主體 - 調降最小寬度以適應手機 */}
+                    <div className="flex-1 min-h-0 bg-white rounded border border-slate-200 flex flex-col overflow-hidden">
                         <div className="flex-1 overflow-auto bg-slate-50/20">
-                            <table className="w-full border-collapse text-center text-[13px] min-w-[700px]">
+                            <table className="w-full border-collapse text-center text-[12px] min-w-[390px]">
                                 <thead className="sticky top-0 z-20 shadow-sm">
-                                    <tr className="bg-[#4F81BD] text-white text-[11px]">
-                                        <th className="w-[36px] bg-[#385D8A]" onClick={()=>setIsAdmin(!isAdmin)}>{isAdmin?'🔓':'🔒'}</th>
-                                        <th className="w-[30px]">No.</th>
-                                        <th className="w-[75px]">RMB日</th>
-                                        <th className="w-[75px]">TWD日</th>
-                                        <th className="w-[95px]">採購(RMB)</th>
-                                        <th className="w-[105px]">支付(TWD)</th>
-                                        <th className="w-[105px]">抵扣</th>
-                                        <th className="w-[115px]">剩餘欠款</th>
-                                        <th className="w-[36px] bg-[#385D8A]">🗑</th>
+                                    <tr className="bg-[#4F81BD] text-white text-[10px]">
+                                        <th className="w-[28px] bg-[#385D8A]" onClick={()=>setIsAdmin(!isAdmin)}>{isAdmin?'🔓':'🔒'}</th>
+                                        <th className="w-[22px]">#</th>
+                                        <th className="w-[42px]">使用</th>
+                                        <th className="w-[42px]">轉帳</th>
+                                        <th className="w-[58px]">人民幣</th>
+                                        <th className="w-[62px]">台幣</th>
+                                        <th className="w-[55px]">抵扣</th>
+                                        <th className="w-[68px] bg-[#385D8A]">餘額</th>
+                                        <th className="w-[28px] bg-[#385D8A]">🗑</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white">
                                     {processedRows.map((r, idx) => {
                                         const isRec = r.isReconciled;
-                                        const cellCls = `border border-slate-200 ${isRec ? 'bg-slate-50 text-slate-400' : ''}`;
+                                        const cellCls = `border border-slate-100 ${isRec ? 'bg-slate-50 text-slate-300' : ''}`;
                                         return (
-                                            <tr key={r.id} className={isRec ? "opacity-70" : "hover:bg-blue-50/20"}>
+                                            <tr key={r.id} className={isRec ? "opacity-60" : "hover:bg-blue-50/10"}>
                                                 <td className={`${cellCls} cursor-pointer`} onClick={() => handleReconcileToggle(idx)}>
                                                     <input type="checkbox" checked={isRec} readOnly className="reconcile-checkbox align-middle" />
                                                 </td>
-                                                <td className={`${cellCls} text-[11px] text-slate-400`}>{r.batch}</td>
-                                                <td className="border border-slate-200 p-0">
-                                                    <input type="text" value={r.dateRMB} placeholder="6/1" onChange={(e)=>handleCellChange(idx,'dateRMB',e.target.value)} className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-400':'text-slate-700'}`} />
+                                                <td className={`${cellCls} text-[9px] text-slate-300`}>{r.batch}</td>
+                                                <td className="border border-slate-100 p-0">
+                                                    <input type="text" value={r.dateRMB} placeholder="6/1" onChange={(e)=>handleCellChange(idx,'dateRMB',e.target.value)} className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-300':'text-slate-600'}`} />
                                                 </td>
-                                                <td className="border border-slate-200 p-0">
-                                                    <input type="text" value={r.dateTWD} placeholder="6/5" onChange={(e)=>handleCellChange(idx,'dateTWD',e.target.value)} className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-400':'text-slate-700'}`} />
+                                                <td className="border border-slate-100 p-0">
+                                                    <input type="text" value={r.dateTWD} placeholder="6/5" onChange={(e)=>handleCellChange(idx,'dateTWD',e.target.value)} className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-300':'text-slate-600'}`} />
                                                 </td>
-                                                <td className="border border-slate-200 p-0 bg-blue-50/10">
-                                                    <input type="number" value={r.purchaseRMB} placeholder="0" onChange={(e)=>handleCellChange(idx,'purchaseRMB',e.target.value)} className={`w-full text-center outline-none font-bold bg-transparent ${isRec?'text-slate-400':'text-blue-900'}`} />
+                                                <td className="border border-slate-100 p-0 bg-blue-50/10">
+                                                    <input type="number" value={r.purchaseRMB} placeholder="0" onChange={(e)=>handleCellChange(idx,'purchaseRMB',e.target.value)} className={`w-full text-center outline-none font-bold bg-transparent ${isRec?'text-slate-300':'text-blue-900'}`} />
                                                 </td>
-                                                <td className={`${cellCls} font-mono font-bold text-slate-800`}>{r.hasData ? Math.round(r.reqTWD).toLocaleString() : ''}</td>
-                                                <td className={`${cellCls} font-mono text-blue-600 text-[12px]`}>{r.hasData ? Math.round(r.principal).toLocaleString() : ''}</td>
-                                                <td className={`${cellCls} font-mono font-bold text-red-600`}>{r.hasData ? Math.round(r.balance).toLocaleString() : ''}</td>
+                                                <td className={`${cellCls} font-mono`}>{r.hasData ? Math.round(r.reqTWD).toLocaleString() : ''}</td>
+                                                <td className={`${cellCls} font-mono text-blue-500 text-[11px]`}>{r.hasData ? Math.round(r.principal).toLocaleString() : ''}</td>
+                                                <td className={`${cellCls} font-mono font-bold text-red-500`}>{r.hasData ? Math.round(r.balance).toLocaleString() : ''}</td>
                                                 <td className={cellCls}>
-                                                    <button onClick={() => handleDeleteRowRequest(idx)} className="text-slate-300 hover:text-red-500 transition-colors p-1">
-                                                        <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                    <button onClick={() => handleDeleteRowRequest(idx)} className="text-slate-200 hover:text-red-400 p-1">
+                                                        <svg className="w-3.5 h-3.5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                                     </button>
                                                 </td>
                                             </tr>
@@ -342,38 +293,33 @@
                             </table>
                         </div>
                         
-                        {/* 底部按鈕控制列 */}
-                        <div className="flex-none bg-slate-100 p-1 flex justify-center gap-6 border-t border-slate-200">
-                            <button onClick={handleClearAllRequest} className="text-[10px] text-red-500 font-bold px-4 py-1.5 border border-red-200 rounded-full bg-white active:bg-red-50 shadow-sm">清空重置</button>
-                            <button onClick={handleAddRows} className="text-[10px] text-blue-700 font-bold px-4 py-1.5 border border-blue-200 rounded-full bg-blue-50 active:bg-blue-100 shadow-sm">+ 新增 5 期</button>
+                        <div className="flex-none bg-slate-50 p-1 flex justify-center gap-6 border-t border-slate-100">
+                            <button onClick={handleClearAllRequest} className="text-[9px] text-red-400 font-bold px-3 py-1 border border-red-100 rounded-full bg-white active:bg-red-50">重置表格</button>
+                            <button onClick={handleAddRows} className="text-[9px] text-blue-600 font-bold px-3 py-1 border border-blue-100 rounded-full bg-blue-50 active:bg-blue-100">+ 5 期</button>
                         </div>
                     </div>
 
-                    {/* 管理者密碼解鎖彈窗 */}
+                    {/* 彈窗部分保持不變 */}
                     {showAuthModal && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm">
-                            <div className="bg-white rounded-xl shadow-2xl p-6 w-[280px] text-center border border-slate-200">
-                                <h3 className="font-bold mb-4 text-slate-800">請輸入管理者密碼</h3>
-                                <input type="password" inputMode="numeric" value={pinInput} onChange={(e)=>setPinInput(e.target.value)} onKeyDown={(e)=>e.key==='Enter'&&handleAuthSubmit()} className={`w-full border-2 rounded p-2 text-center text-xl tracking-widest outline-none mb-4 ${authError?'border-red-400 bg-red-50 text-red-700':'border-blue-500 focus:ring-2 focus:ring-blue-100'}`} autoFocus />
-                                {authError && <p className="text-[10px] text-red-500 mb-2 font-bold animate-pulse">密碼錯誤，請重試！</p>}
+                            <div className="bg-white rounded-xl p-6 w-[260px] text-center shadow-2xl">
+                                <h3 className="font-bold mb-4 text-sm text-slate-800">管理者密碼</h3>
+                                <input type="password" inputMode="numeric" value={pinInput} onChange={(e)=>setPinInput(e.target.value)} onKeyDown={(e)=>e.key==='Enter'&&handleAuthSubmit()} className={`w-full border-2 rounded p-2 text-center text-xl tracking-widest outline-none mb-4 ${authError?'border-red-400 bg-red-50':'border-blue-500'}`} autoFocus />
                                 <div className="flex gap-2">
-                                    <button onClick={()=>{setShowAuthModal(false);setPinInput('');setAuthError(false);setPendingAction(null);}} className="flex-1 py-2 bg-slate-100 rounded text-sm text-slate-600">取消</button>
-                                    <button onClick={handleAuthSubmit} className="flex-1 py-2 bg-blue-600 text-white rounded text-sm font-bold shadow-sm">解鎖</button>
+                                    <button onClick={()=>{setShowAuthModal(false);setPinInput('');setAuthError(false);}} className="flex-1 py-1.5 bg-slate-100 rounded text-xs">取消</button>
+                                    <button onClick={handleAuthSubmit} className="flex-1 py-1.5 bg-blue-600 text-white rounded text-xs font-bold">解鎖</button>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* 刪除或重置確認彈窗 */}
                     {(showConfirmModal || showDeleteRowModal) && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-[1px]">
-                            <div className="bg-white rounded-lg p-5 w-[260px] text-center shadow-xl border border-slate-100">
-                                <p className="font-bold mb-5 text-sm text-slate-700 leading-relaxed">
-                                    {showConfirmModal ? '確定要清空所有紀錄嗎？\n此動作無法還原。' : '確定要刪除這筆紀錄嗎？'}
-                                </p>
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40">
+                            <div className="bg-white rounded-lg p-5 w-[240px] text-center shadow-xl">
+                                <p className="font-bold mb-5 text-xs text-slate-700">{showConfirmModal?'確定要清空所有紀錄嗎？':'確定要刪除這筆紀錄嗎？'}</p>
                                 <div className="flex gap-2">
-                                    <button onClick={()=>{setShowConfirmModal(false);setShowDeleteRowModal(false);}} className="flex-1 py-2 bg-slate-100 text-xs rounded text-slate-600">取消</button>
-                                    <button onClick={showConfirmModal?executeClearAll:executeDeleteRow} className="flex-1 py-2 bg-red-600 text-white text-xs rounded font-bold shadow-sm">確定</button>
+                                    <button onClick={()=>{setShowConfirmModal(false);setShowDeleteRowModal(false);}} className="flex-1 py-1.5 bg-slate-100 text-[10px] rounded">取消</button>
+                                    <button onClick={showConfirmModal?executeClearAll:executeDeleteRow} className="flex-1 py-1.5 bg-red-600 text-white text-[10px] rounded font-bold">確定</button>
                                 </div>
                             </div>
                         </div>
