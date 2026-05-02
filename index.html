@@ -3,109 +3,377 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>動態支付寶代付與還款記帳系統</title>
+    <title>動態支付寶代付與還款記帳系統 (雲端共編版)</title>
+    <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- 引入 React 與 ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-is@18/umd/react-is.production.min.js"></script>
+    <!-- 引入 Babel 供瀏覽器即時編譯 JSX -->
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-    <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
+    <!-- 引入 Recharts 圖表庫 -->
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.12.0/umd/Recharts.js"></script>
+    <style>
+        /* 自訂捲軸與試算表外觀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 隱藏數字輸入框的上下箭頭 */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+
+        /* 自訂 Checkbox 樣式 */
+        .reconcile-checkbox { width: 1.25rem; height: 1.25rem; cursor: pointer; accent-color: #4F81BD; }
+    </style>
 </head>
-<body class="bg-slate-50 text-slate-800">
-    <div id="root"></div>
+<!-- 調整 Body：鎖定高度，不允許整個網頁滾動 -->
+<body class="bg-slate-50 text-slate-800 antialiased h-screen overflow-hidden flex flex-col">
+    <!-- 調整 Root：填滿剩餘高度 -->
+    <div id="root" class="flex-1 min-h-0 flex flex-col w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
 
         function App() {
-            // 基本設定狀態
+            // 雲端連線狀態
+            const [dbRef, setDbRef] = useState(null);
+            const [syncStatus, setSyncStatus] = useState(typeof __firebase_config === 'undefined' ? 'local' : 'offline');
+
+            // 基礎資料狀態
             const [settings, setSettings] = useState(() => {
-                const saved = localStorage.getItem('repayment_settings');
-                return saved ? JSON.parse(saved) : { initialDebt: 600000, rateOrig: 4.7, ratePay: 5.0 };
+                const saved = localStorage.getItem('joption_excel_settings');
+                return saved ? JSON.parse(saved) : { initialDebt: 400000, rateOrig: 4.7, ratePay: 5.0 };
             });
 
-            // 交易紀錄狀態
-            const [records, setRecords] = useState(() => {
-                const saved = localStorage.getItem('repayment_records');
-                return saved ? JSON.parse(saved) : [];
+            const [rows, setRows] = useState(() => {
+                const saved = localStorage.getItem('joption_excel_rows');
+                if (saved) {
+                    const parsedData = JSON.parse(saved);
+                    return parsedData.map(r => ({
+                        ...r,
+                        dateRMB: r.dateRMB !== undefined ? r.dateRMB : (r.date || ''),
+                        dateTWD: r.dateTWD || '',
+                        isReconciled: r.isReconciled || false
+                    }));
+                }
+                return Array.from({ length: 15 }, (_, i) => ({ id: Date.now() + i, dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false }));
             });
 
-            const [newPurchaseRMB, setNewPurchaseRMB] = useState('');
-
-            // 自動儲存到瀏覽器
+            // 初始化 Firebase
             useEffect(() => {
-                localStorage.setItem('repayment_settings', JSON.stringify(settings));
-                localStorage.setItem('repayment_records', JSON.stringify(records));
-            }, [settings, records]);
+                if (typeof __firebase_config === 'undefined') return;
 
-            const margin = (settings.ratePay - settings.rateOrig).toFixed(2);
+                const initFirebase = async () => {
+                    try {
+                        const loadModule = new Function('url', 'return import(url)');
+                        const { initializeApp } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+                        const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+                        const { getFirestore, doc, setDoc, onSnapshot } = await loadModule('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
 
-            // 新增一筆紀錄
-            const addRecord = (e) => {
-                e.preventDefault();
-                if (!newPurchaseRMB || newPurchaseRMB <= 0) return;
-                
-                const purchase = Number(newPurchaseRMB);
-                const prevDebt = records.length > 0 ? records[records.length - 1].remainingDebt : settings.initialDebt;
-                const principalPaid = purchase * margin;
-                const newDebt = Math.max(0, prevDebt - principalPaid);
+                        const firebaseConfig = JSON.parse(__firebase_config);
+                        const app = initializeApp(firebaseConfig);
+                        const auth = getAuth(app);
+                        const db = getFirestore(app);
+                        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-                const newRecord = {
-                    id: Date.now(),
-                    batch: records.length + 1,
-                    purchaseRMB: purchase,
-                    requiredTWD: purchase * settings.ratePay,
-                    principalPaid: principalPaid,
-                    remainingDebt: newDebt
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+
+                        onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                setDbRef({ db, doc, setDoc, onSnapshot, appId });
+                            }
+                        });
+                    } catch (err) {
+                        console.error("Firebase init error:", err);
+                    }
                 };
+                initFirebase();
+            }, []);
 
-                setRecords([...records, newRecord]);
-                setNewPurchaseRMB('');
-            };
+            // 監聽雲端資料 (自動背景同步)
+            useEffect(() => {
+                if (!dbRef) return;
 
-            // 刪除最後一筆
-            const undoLast = () => {
-                setRecords(records.slice(0, -1));
-            };
+                setSyncStatus('connecting');
+                const { db, doc, onSnapshot, appId } = dbRef;
+                const roomDoc = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', 'shared_ledger');
 
-            // 重新計算（清空紀錄）
-            const resetAll = () => {
-                if(window.confirm('確定要清空所有交易紀錄嗎？')) {
-                    setRecords([]);
+                const unsubscribe = onSnapshot(roomDoc, (snapshot) => {
+                    if (snapshot.exists()) {
+                        const data = snapshot.data();
+                        if (data.settings) setSettings(data.settings);
+                        if (data.rows) setRows(data.rows);
+                    } else {
+                        saveToCloudRef.current(settings, rows);
+                    }
+                    setSyncStatus('online');
+                }, (error) => {
+                    console.error("Sync error:", error);
+                    setSyncStatus('offline');
+                });
+
+                return () => unsubscribe();
+            }, [dbRef]);
+
+            // 儲存至雲端的方法
+            const saveToCloudRef = useRef(null);
+            saveToCloudRef.current = async (newSettings, newRows) => {
+                if (!dbRef) return;
+                const { db, doc, setDoc, appId } = dbRef;
+                const roomDoc = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', 'shared_ledger');
+                try {
+                    await setDoc(roomDoc, { settings: newSettings, rows: newRows, updatedAt: Date.now() });
+                } catch (e) {
+                    console.error("Save error:", e);
                 }
             };
 
-            // 圖表資料處理
+            // 狀態更新
+            const updateRows = (newRows) => {
+                setRows(newRows);
+                localStorage.setItem('joption_excel_rows', JSON.stringify(newRows));
+                if (syncStatus === 'online') saveToCloudRef.current(settings, newRows);
+            };
+
+            const updateSettings = (newSettings) => {
+                setSettings(newSettings);
+                localStorage.setItem('joption_excel_settings', JSON.stringify(newSettings));
+                if (syncStatus === 'online') saveToCloudRef.current(newSettings, rows);
+            };
+
+            // 自動擴充列數
+            useEffect(() => {
+                const lastRow = rows[rows.length - 1];
+                const secondLastRow = rows[rows.length - 2];
+                if ((lastRow && (lastRow.purchaseRMB !== '' || lastRow.dateRMB !== '')) || 
+                    (secondLastRow && (secondLastRow.purchaseRMB !== '' || secondLastRow.dateRMB !== ''))) {
+                    const newRows = Array.from({ length: 5 }, (_, i) => ({ id: Date.now() + i, dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false }));
+                    updateRows([...rows, ...newRows]);
+                }
+            }, [rows]);
+
+            // 操作處理函式
+            const handleCellChange = (index, field, value) => {
+                const newRows = [...rows];
+                newRows[index][field] = value;
+                updateRows(newRows);
+            };
+
+            const handleReconcileToggle = (index) => {
+                const newRows = [...rows];
+                newRows[index].isReconciled = !newRows[index].isReconciled;
+                updateRows(newRows);
+            };
+
+            const handleClearAll = () => {
+                if(window.confirm('確定要清空所有紀錄嗎？清空後兩邊的畫面都會恢復為空白表格。')) {
+                    updateRows(Array.from({ length: 15 }, (_, i) => ({ id: Date.now() + i, dateRMB: '', dateTWD: '', purchaseRMB: '', isReconciled: false })));
+                }
+            };
+
+            const handleAddRows = () => {
+                const newRows = Array.from({ length: 5 }, (_, i) => ({ 
+                    id: Date.now() + i, 
+                    dateRMB: '', 
+                    dateTWD: '', 
+                    purchaseRMB: '', 
+                    isReconciled: false 
+                }));
+                updateRows([...rows, ...newRows]);
+            };
+
+            // 邏輯計算
+            const margin = (settings.ratePay - settings.rateOrig).toFixed(2);
+            let currentDebt = settings.initialDebt;
+            let totalPurchaseRMB = 0;
+            let totalRequiredTWD = 0;
+            let totalRepaid = 0;
+
+            const processedRows = rows.map((row, index) => {
+                const purchase = parseFloat(row.purchaseRMB);
+                if (!isNaN(purchase) && purchase > 0) {
+                    const requiredTWD = purchase * settings.ratePay;
+                    const principalPaid = purchase * margin;
+                    currentDebt -= principalPaid;
+
+                    totalPurchaseRMB += purchase;
+                    totalRequiredTWD += requiredTWD;
+                    totalRepaid += principalPaid;
+
+                    return { ...row, batch: `第 ${index + 1} 期`, requiredTWD, principalPaid, remainingDebt: currentDebt, hasData: true };
+                }
+                return { ...row, batch: `第 ${index + 1} 期`, requiredTWD: null, principalPaid: null, remainingDebt: null, hasData: false };
+            });
+
             const chartData = [
                 { batch: '初始', debt: settings.initialDebt },
-                ...records.map(r => ({ batch: `第 ${r.batch} 次`, debt: r.remainingDebt }))
+                ...processedRows.filter(r => r.hasData).map(r => ({ batch: r.batch, debt: Math.round(r.remainingDebt) }))
             ];
 
-            const currentDebt = records.length > 0 ? records[records.length - 1].remainingDebt : settings.initialDebt;
-            const totalRepaid = settings.initialDebt - currentDebt;
-
             return (
-                <div className="p-4 md:p-8 max-w-5xl mx-auto font-sans">
-                    <header className="mb-8 text-center">
-                        <h1 className="text-3xl font-bold text-slate-800">網拍代付動態記帳本</h1>
-                        <p className="text-slate-500 mt-2">記錄每一筆採購，自動換算匯率差額抵扣舊帳</p>
-                    </header>
+                <div className="flex flex-col h-full p-3 md:p-5 max-w-[1400px] w-full mx-auto font-sans">
+                    
+                    {/* 1. 上方置頂區塊 (Header + 儀表板) */}
+                    <div className="flex-none shrink-0 space-y-4 mb-4">
+                        <header className="flex flex-col md:flex-row justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <div>
+                                <h1 className="text-2xl font-bold text-slate-800 tracking-tight flex items-center">
+                                    網拍代付對帳表
+                                    {syncStatus === 'online' && <span className="ml-3 px-2 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-md border border-emerald-200 shadow-sm flex items-center"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-1.5 animate-pulse"></div>已即時連線</span>}
+                                    {syncStatus === 'connecting' && <span className="ml-3 px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-md border border-yellow-200 shadow-sm">連線中...</span>}
+                                    {syncStatus === 'offline' && <span className="ml-3 px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded-md border border-slate-200 shadow-sm">單機模式</span>}
+                                </h1>
+                                <p className="text-slate-500 text-sm mt-1">只要修改數字，雙方畫面會立刻在背景自動同步</p>
+                            </div>
+                            
+                            <div className="flex gap-4 mt-4 md:mt-0 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                <div className="flex items-center text-sm">
+                                    <label className="font-bold text-slate-600 mr-2">原始匯率:</label>
+                                    <input type="number" step="0.1" value={settings.rateOrig} onChange={(e) => updateSettings({...settings, rateOrig: Number(e.target.value)})} className="w-16 p-1 border rounded text-center outline-none focus:border-blue-500 bg-white" />
+                                </div>
+                                <div className="flex items-center text-sm">
+                                    <label className="font-bold text-slate-600 mr-2">結算匯率:</label>
+                                    <input type="number" step="0.1" value={settings.ratePay} onChange={(e) => updateSettings({...settings, ratePay: Number(e.target.value)})} className="w-16 p-1 border rounded text-center outline-none focus:border-blue-500 bg-white" />
+                                </div>
+                            </div>
+                        </header>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                        {/* 左側：設定與輸入區 */}
-                        <div className="space-y-6">
-                            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                <h2 className="text-lg font-bold mb-4 flex items-center text-slate-700">⚙️ 基礎設定</h2>
-                                <div className="space-y-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 mb-1">初始總欠款 (TWD)</label>
-                                        <input type="number" value={settings.initialDebt} onChange={(e) => setSettings({...settings, initialDebt: Number(e.target.value)})} className="w-full border rounded-lg p-2 bg-slate-50" />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-1">原始匯率</label>
-                                            <input type="number" step="0.1" value={settings.rateOrig} onChange={(e) => setSettings({...settings, rateOrig: Number(e.target.value)})} className="w-full border rounded-lg p-2 bg-slate-50" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs font-bold text-slate-500 mb-1">結算匯率</label>
-                                            <input type="number" step="0.1" value={settings.ratePay} onChange={(e) => setSettings({...settings,
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                            <div className="bg-slate-800 p-4 rounded-xl text-white shadow-md transition-all">
+                                <p className="text-xs font-medium text-slate-300 mb-1 tracking-wider">目前結存欠款 (TWD)</p>
+                                <p className="text-2xl font-black">{Math.round(currentDebt).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-4 rounded-xl text-white shadow-md transition-all">
+                                <p className="text-xs font-medium text-emerald-100 mb-1 tracking-wider">累計已扣抵本金 (TWD)</p>
+                                <p className="text-2xl font-black">{Math.round(totalRepaid).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-blue-600 p-4 rounded-xl text-white shadow-md transition-all">
+                                <p className="text-xs font-medium text-blue-100 mb-1 tracking-wider">歷史累計採購 (RMB)</p>
+                                <p className="text-2xl font-black">{Math.round(totalPurchaseRMB).toLocaleString()}</p>
+                            </div>
+                            <div className="bg-purple-600 p-4 rounded-xl text-white shadow-md transition-all">
+                                <p className="text-xs font-medium text-purple-100 mb-1 tracking-wider">累計應請款總計 (TWD)</p>
+                                <p className="text-2xl font-black">{Math.round(totalRequiredTWD).toLocaleString()}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 2. 主體滑動區塊 (圖表 + 表格) */}
+                    <div className="flex-1 min-h-0 bg-white rounded-xl shadow-sm border border-slate-300 flex flex-col overflow-hidden">
+                        
+                        {/* 圖表：也設定為置頂不滑動 */}
+                        {chartData.length > 1 && (
+                            <div className="flex-none shrink-0 w-full h-32 md:h-40 border-b border-slate-200 p-4 bg-slate-50/50 hidden md:block">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                        <XAxis dataKey="batch" axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b'}} />
+                                        <YAxis axisLine={false} tickLine={false} tick={{fontSize: 12, fill: '#64748b'}} width={80} domain={['auto', 'auto']} tickFormatter={(v) => `$${v.toLocaleString()}`} />
+                                        <Tooltip formatter={(value) => [`$${value.toLocaleString()}`, '結存餘額']} />
+                                        <Line type="stepAfter" dataKey="debt" name="剩餘欠款" stroke="#4F81BD" strokeWidth={3} dot={{ r: 4, fill: '#4F81BD', strokeWidth: 2, stroke: '#fff' }} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                        )}
+
+                        {/* 獨立的表格滑動層 */}
+                        <div className="flex-1 overflow-auto bg-slate-50/30">
+                            <table className="w-full border-collapse text-center text-sm min-w-[900px]">
+                                {/* 設定 thead sticky top-0 讓表頭不會跟著滑走 */}
+                                <thead className="sticky top-0 z-20 shadow-[0_2px_4px_rgba(0,0,0,0.05)] outline outline-1 outline-slate-300">
+                                    <tr>
+                                        <th colSpan="6" className="border-r border-b border-slate-300 p-2 bg-white">
+                                            <div className="text-left pl-2 flex items-center space-x-3">
+                                                <button onClick={handleClearAll} className="px-3 py-1.5 bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded text-xs transition-colors border border-slate-200 font-medium shadow-sm">
+                                                    清空重置表格
+                                                </button>
+                                                <span className="text-xs text-slate-400 font-normal">管理者可點擊最左側勾選框，將已結算之帳目反灰標記。往下滾動時，表頭會自動吸附！</span>
+                                            </div>
+                                        </th>
+                                        <th className="border-x border-b border-slate-300 p-2 bg-white text-right font-bold text-slate-700">原欠款</th>
+                                        <th className="border-l border-b border-slate-300 p-0 bg-yellow-50">
+                                            <input 
+                                                type="number" 
+                                                value={settings.initialDebt} 
+                                                onChange={(e) => updateSettings({...settings, initialDebt: Number(e.target.value)})}
+                                                className="w-full h-full p-2 text-center font-bold text-slate-800 bg-transparent outline-none focus:bg-yellow-100 transition-colors"
+                                            />
+                                        </th>
+                                    </tr>
+                                    <tr className="bg-[#4F81BD] text-white">
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[50px] w-[50px] bg-[#385D8A]">對帳</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[80px]">筆數</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[120px]">使用 RMB 日期</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[120px]">轉帳 TWD 日期</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[140px]">採購金額 (RMB)</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[160px]">支付金額 (TWD @ {settings.ratePay})</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[180px]">抵扣舊欠款 (TWD @ {margin})</th>
+                                        <th className="border border-[#385D8A] p-2.5 font-medium min-w-[160px]">剩餘欠款總額 (TWD)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white">
+                                    {processedRows.map((r, idx) => {
+                                        const isRec = r.isReconciled;
+                                        const trClass = isRec ? "bg-slate-200 text-slate-400" : "hover:bg-slate-50 transition-colors";
+                                        const cellClass = "border border-slate-200 p-2";
+                                        const dateRMBClass = isRec ? "bg-slate-200 text-slate-500" : "bg-blue-50/30 text-slate-700 focus:bg-white";
+                                        const dateTWDClass = isRec ? "bg-slate-200 text-slate-500" : "bg-green-50/30 text-slate-700 focus:bg-white";
+                                        const purchaseClass = isRec ? "bg-slate-200 text-slate-500" : "bg-blue-50/60 text-slate-800 font-bold focus:bg-white";
+                                        const textBase = isRec ? "text-slate-400" : "text-slate-700";
+                                        const textRed = isRec ? "text-slate-400" : "text-red-600 font-bold";
+
+                                        return (
+                                            <tr key={r.id} className={trClass}>
+                                                <td className={`${cellClass} ${isRec ? 'bg-slate-300' : 'bg-slate-100'} cursor-pointer transition-colors`} onClick={() => handleReconcileToggle(idx)}>
+                                                    <input type="checkbox" checked={r.isReconciled} onChange={() => handleReconcileToggle(idx)} onClick={(e) => e.stopPropagation()} className="reconcile-checkbox" />
+                                                </td>
+                                                <td className={`${cellClass} ${isRec ? '' : 'bg-slate-50/50 text-slate-600'}`}>{r.batch}</td>
+                                                <td className="border border-slate-200 p-0">
+                                                    <input type="text" placeholder="例: 6/1" value={r.dateRMB} onChange={(e) => handleCellChange(idx, 'dateRMB', e.target.value)} className={`w-full h-full p-2.5 text-center outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400 placeholder:text-slate-300 transition-colors ${dateRMBClass}`} />
+                                                </td>
+                                                <td className="border border-slate-200 p-0">
+                                                    <input type="text" placeholder="例: 6/5" value={r.dateTWD} onChange={(e) => handleCellChange(idx, 'dateTWD', e.target.value)} className={`w-full h-full p-2.5 text-center outline-none focus:ring-2 focus:ring-inset focus:ring-green-400 placeholder:text-slate-300 transition-colors ${dateTWDClass}`} />
+                                                </td>
+                                                <td className="border border-slate-200 p-0">
+                                                    <input type="number" placeholder="輸入 RMB" value={r.purchaseRMB} onChange={(e) => handleCellChange(idx, 'purchaseRMB', e.target.value)} className={`w-full h-full p-2.5 text-center outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 placeholder:text-blue-300/50 transition-colors ${purchaseClass}`} />
+                                                </td>
+                                                <td className={`${cellClass} font-mono ${textBase} transition-colors`}>{r.hasData ? Math.round(r.requiredTWD).toLocaleString() : ''}</td>
+                                                <td className={`${cellClass} font-mono ${textBase} transition-colors`}>{r.hasData ? Math.round(r.principalPaid).toLocaleString() : ''}</td>
+                                                <td className={`${cellClass} font-mono ${textRed} transition-colors`}>{r.hasData ? Math.round(r.remainingDebt).toLocaleString() : ''}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        {/* 3. 底部按鈕區：也固定在底部，不會被滑掉 */}
+                        <div className="flex-none shrink-0 bg-slate-50 border-t border-slate-200 p-3 flex justify-center">
+                            <button 
+                                onClick={handleAddRows} 
+                                className="px-6 py-2.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded-full font-bold text-sm transition-colors flex items-center shadow-sm active:bg-blue-200"
+                            >
+                                <svg className="w-5 h-5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                向下新增 5 期空白列
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
