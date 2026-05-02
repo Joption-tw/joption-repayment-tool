@@ -321,19 +321,19 @@
                                                 <td className={`${cellCls} text-[14px] font-bold text-slate-400`}>{r.batch}</td>
                                                 
                                                 <td className="border border-slate-100 p-0">
-                                                    <input 
-                                                        type="text" value={r.dateRMB} placeholder="6/1" 
+                                                    <input
+                                                        type="text" value={r.dateRMB} placeholder="5/1"
                                                         readOnly={isRec}
-                                                        onChange={(e)=>handleCellChange(idx,'dateRMB',e.target.value)} 
-                                                        className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-300 cursor-not-allowed':'text-slate-600'}`} 
+                                                        onChange={(e)=>handleCellChange(idx,'dateRMB',e.target.value)}
+                                                        className={`w-full text-center outline-none bg-transparent text-[10px] ${isRec?'text-slate-300 cursor-not-allowed':'text-slate-600'}`}
                                                     />
                                                 </td>
                                                 <td className="border border-slate-100 p-0">
-                                                    <input 
-                                                        type="text" value={r.dateTWD} placeholder="6/5" 
+                                                    <input
+                                                        type="text" value={r.dateTWD} placeholder="5/1"
                                                         readOnly={isRec}
-                                                        onChange={(e)=>handleCellChange(idx,'dateTWD',e.target.value)} 
-                                                        className={`w-full text-center outline-none bg-transparent ${isRec?'text-slate-300 cursor-not-allowed':'text-slate-600'}`} 
+                                                        onChange={(e)=>handleCellChange(idx,'dateTWD',e.target.value)}
+                                                        className={`w-full text-center outline-none bg-transparent text-[10px] ${isRec?'text-slate-300 cursor-not-allowed':'text-slate-600'}`}
                                                     />
                                                 </td>
                                                 <td className="border border-slate-100 p-0 bg-blue-50/10">
