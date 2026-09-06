@@ -236,7 +236,12 @@
             };
 
             const handleDeleteRowRequest = (index) => {
-                requireAdmin(() => { setRowToDelete(index); setShowDeleteRowModal(true); });
+                const openDeleteModal = () => { setRowToDelete(index); setShowDeleteRowModal(true); };
+                if (rows[index].isConfirmed) {
+                    requireAdmin(openDeleteModal);
+                } else {
+                    openDeleteModal();
+                }
             };
 
             const executeDeleteRow = () => {
